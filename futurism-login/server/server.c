@@ -279,6 +279,11 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 
 	}
 
+	// Close the connection.
+	socketclose(client->handle->fd);
+	scRemoveSocket(&s->ss.connectionHandler, client);
+	return;
+
 }
 
 void serverDelete(server *const __RESTRICT__ s){
