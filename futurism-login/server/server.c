@@ -40,6 +40,11 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 
 	httpRequest request;
 
+	#ifdef SOCKET_DEBUG
+	client->buffer[client->bufferSize] = '\0';
+	printf("Received:\n%s\n", client->buffer);
+	#endif
+
 	// Check if the request is a HTTP request.
 	if(httpRequestValid(&request, client->buffer, client->bufferSize)){
 
@@ -80,6 +85,21 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 				// Package and send response.
 				httpResponse(response, response_length, NULL, 0, "application/javascript", 22);
 				ssSendDataTCP(client->handle, response);
+
+				#ifdef SOCKET_DEBUG
+				printf("Sent:\n%s\n", response);
+				{
+					char ip[46];
+					inet_ntop(
+						client->address.ss_family,
+						(client->address.ss_family == AF_INET ?
+						(void *)(&((struct sockaddr_in *)&client->address)->sin_addr) :
+						(void *)(&((struct sockaddr_in6 *)&client->address)->sin6_addr)),
+						ip, sizeof(ip)
+					);
+					printf("Closing TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&client->address)->sin_port, (unsigned long)client->id);
+				}
+				#endif
 
 				// Close the connection.
 				socketclose(client->handle->fd);
@@ -147,6 +167,21 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 							);
 							ssSendDataTCP(client->handle, response);
 
+							#ifdef SOCKET_DEBUG
+							printf("Sent:\n%s\n", response);
+							{
+								char ip[46];
+								inet_ntop(
+									client->address.ss_family,
+									(client->address.ss_family == AF_INET ?
+									(void *)(&((struct sockaddr_in *)&client->address)->sin_addr) :
+									(void *)(&((struct sockaddr_in6 *)&client->address)->sin6_addr)),
+									ip, sizeof(ip)
+								);
+								printf("Closing TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&client->address)->sin_port, (unsigned long)client->id);
+							}
+							#endif
+
 							// Close the connection.
 							socketclose(client->handle->fd);
 							scRemoveSocket(&s->ss.connectionHandler, client);
@@ -162,6 +197,21 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 				memcpy(response, "Login failed. This is either a problem with your form or an internal server error.", 82);
 				httpResponse(response, 82, NULL, 0, "text/html; charset=UTF-8", 24);
 				ssSendDataTCP(client->handle, response);
+
+				#ifdef SOCKET_DEBUG
+				printf("Sent:\n%s\n", response);
+				{
+					char ip[46];
+					inet_ntop(
+						client->address.ss_family,
+						(client->address.ss_family == AF_INET ?
+						(void *)(&((struct sockaddr_in *)&client->address)->sin_addr) :
+						(void *)(&((struct sockaddr_in6 *)&client->address)->sin6_addr)),
+						ip, sizeof(ip)
+					);
+					printf("Closing TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&client->address)->sin_port, (unsigned long)client->id);
+				}
+				#endif
 
 				// Close the connection.
 				socketclose(client->handle->fd);
@@ -228,6 +278,21 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 							httpResponse(response, 24, NULL, 0, "text/html; charset=UTF-8", 24);
 							ssSendDataTCP(client->handle, response);
 
+							#ifdef SOCKET_DEBUG
+							printf("Sent:\n%s\n", response);
+							{
+								char ip[46];
+								inet_ntop(
+									client->address.ss_family,
+									(client->address.ss_family == AF_INET ?
+									(void *)(&((struct sockaddr_in *)&client->address)->sin_addr) :
+									(void *)(&((struct sockaddr_in6 *)&client->address)->sin6_addr)),
+									ip, sizeof(ip)
+								);
+								printf("Closing TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&client->address)->sin_port, (unsigned long)client->id);
+							}
+							#endif
+
 							// Close the connection.
 							socketclose(client->handle->fd);
 							scRemoveSocket(&s->ss.connectionHandler, client);
@@ -243,6 +308,21 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 				memcpy(response, "Registration failed. This is either a problem with your form or an internal server error.", 89);
 				httpResponse(response, 89, NULL, 0, "text/html; charset=UTF-8", 24);
 				ssSendDataTCP(client->handle, response);
+
+				#ifdef SOCKET_DEBUG
+				printf("Sent:\n%s\n", response);
+				{
+					char ip[46];
+					inet_ntop(
+						client->address.ss_family,
+						(client->address.ss_family == AF_INET ?
+						(void *)(&((struct sockaddr_in *)&client->address)->sin_addr) :
+						(void *)(&((struct sockaddr_in6 *)&client->address)->sin6_addr)),
+						ip, sizeof(ip)
+					);
+					printf("Closing TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&client->address)->sin_port, (unsigned long)client->id);
+				}
+				#endif
 
 				// Close the connection.
 				socketclose(client->handle->fd);
@@ -266,6 +346,21 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 					httpResponse(response, response_length, NULL, 0, "application/json", 16);
 					ssSendDataTCP(client->handle, response);
 
+					#ifdef SOCKET_DEBUG
+					printf("Sent:\n%s\n", response);
+					{
+						char ip[46];
+						inet_ntop(
+							client->address.ss_family,
+							(client->address.ss_family == AF_INET ?
+							(void *)(&((struct sockaddr_in *)&client->address)->sin_addr) :
+							(void *)(&((struct sockaddr_in6 *)&client->address)->sin6_addr)),
+							ip, sizeof(ip)
+						);
+						printf("Closing TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&client->address)->sin_port, (unsigned long)client->id);
+					}
+					#endif
+
 					// Close the connection.
 					socketclose(client->handle->fd);
 					scRemoveSocket(&s->ss.connectionHandler, client);
@@ -278,6 +373,21 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 		}
 
 	}
+
+	#ifdef SOCKET_DEBUG
+	printf("Nothing sent.\n");
+	{
+		char ip[46];
+		inet_ntop(
+			client->address.ss_family,
+			(client->address.ss_family == AF_INET ?
+			(void *)(&((struct sockaddr_in *)&client->address)->sin_addr) :
+			(void *)(&((struct sockaddr_in6 *)&client->address)->sin6_addr)),
+			ip, sizeof(ip)
+		);
+		printf("Closing TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&client->address)->sin_port, (unsigned long)client->id);
+	}
+	#endif
 
 	// Close the connection.
 	socketclose(client->handle->fd);

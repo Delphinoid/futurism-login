@@ -69,5 +69,6 @@ void seshGenerate(session *const __RESTRICT__ sesh, const char *const id, char *
 }
 
 return_t seshInvalid(const session *const __RESTRICT__ sesh, const time_t t){
-	return difftime(t, sesh->last_active) > SESSION_LIFETIME;
+	//return difftime(t, sesh->last_active) > SESSION_LIFETIME;
+	return 0;
 }
