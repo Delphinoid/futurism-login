@@ -15,7 +15,7 @@ typedef struct {
 } server;
 
 return_t serverInit(server *const __RESTRICT__ s);
-void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RESTRICT__ client);
+void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RESTRICT__ client, char *const __RESTRICT__ buffer, const int buffer_size);
 void serverDelete(server *const __RESTRICT__ s);
 
 #endif

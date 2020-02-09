@@ -15,6 +15,7 @@ return_t serverInit(server *const __RESTRICT__ s){
 	ssConfig config = {
 		.type = SOCK_STREAM,
 		.protocol = IPPROTO_TCP,
+		.allocate = SOCKET_SERVER_ALLOCATE_EVERYTHING,
 		.port = 9000,
 		.backlog = SOMAXCONN,
 		.connections = SOCKET_MAX_SOCKETS
@@ -36,17 +37,17 @@ return_t serverInit(server *const __RESTRICT__ s){
 
 }
 
-void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RESTRICT__ client){
+void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RESTRICT__ client, char *const __RESTRICT__ buffer, const int buffer_size){
 
 	httpRequest request;
 
 	#ifdef SOCKET_DEBUG
-	client->buffer[client->bufferSize] = '\0';
-	printf("Received:\n%s\n", client->buffer);
+	buffer[buffer_size] = '\0';
+	printf("Received:\n%s\n", buffer);
 	#endif
 
 	// Check if the request is a HTTP request.
-	if(httpRequestValid(&request, client->buffer, client->bufferSize)){
+	if(httpRequestValid(&request, buffer, buffer_size)){
 
 		// GET request.
 		if(request.methodLength == 3){
@@ -83,8 +84,8 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 				}
 
 				// Package and send response.
-				httpResponse(response, response_length, NULL, 0, "application/javascript", 22);
-				ssSendDataTCP(client->handle, response);
+				response_length = httpResponse(response, response_length, NULL, 0, "application/javascript", 22);
+				ssSendTCP(client->handle, response, response_length);
 
 				#ifdef SOCKET_DEBUG
 				printf("Sent:\n%s\n", response);
@@ -102,14 +103,14 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 				#endif
 
 				// Close the connection.
-				socketclose(client->handle->fd);
-				scRemoveSocket(&s->ss.connectionHandler, client);
+				ssDisconnect(&s->ss, client);
 				return;
 
 			// GET request received from login client.
 			}else if(memcmp(request.targetStart, "/?operation=login", 17) == 0){
 
 				char response[178 + SESSION_TOKEN_BYTES];
+				size_t response_length;
 
 				// First, if the user has a valid session, destroy it.
 				const char *const cookiesStart = httpRequestFindHeader(&request, NULL, "cookie", 6, NULL);
@@ -160,12 +161,12 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 							memcpy(cookie + 18 + SESSION_TOKEN_BYTES, ";\r\n", 3);
 
 							// Login successful. Send the user back the token as a cookie.
-							httpResponse(
+							response_length = httpResponse(
 								response, 17,
 								cookie, 21 + SESSION_TOKEN_BYTES,
 								"text/html; charset=UTF-8", 24
 							);
-							ssSendDataTCP(client->handle, response);
+							ssSendTCP(client->handle, response, response_length);
 
 							#ifdef SOCKET_DEBUG
 							printf("Sent:\n%s\n", response);
@@ -183,8 +184,7 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 							#endif
 
 							// Close the connection.
-							socketclose(client->handle->fd);
-							scRemoveSocket(&s->ss.connectionHandler, client);
+							ssDisconnect(&s->ss, client);
 							return;
 
 						}
@@ -195,8 +195,8 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 
 				// Login failed.
 				memcpy(response, "Login failed. This is either a problem with your form or an internal server error.", 82);
-				httpResponse(response, 82, NULL, 0, "text/html; charset=UTF-8", 24);
-				ssSendDataTCP(client->handle, response);
+				response_length = httpResponse(response, 82, NULL, 0, "text/html; charset=UTF-8", 24);
+				ssSendTCP(client->handle, response, response_length);
 
 				#ifdef SOCKET_DEBUG
 				printf("Sent:\n%s\n", response);
@@ -214,8 +214,7 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 				#endif
 
 				// Close the connection.
-				socketclose(client->handle->fd);
-				scRemoveSocket(&s->ss.connectionHandler, client);
+				ssDisconnect(&s->ss, client);
 				return;
 
 			}
@@ -227,6 +226,7 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 			if(memcmp(request.contentStart, "operation=register", 18) == 0){
 
 				char response[164];
+				size_t response_length;
 
 				// Validate the registration request.
 				if(memcmp(request.contentStart+18, "&username=", 10) == 0){
@@ -275,8 +275,8 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 							memcpy(response, "Registration successful.", 24);
 
 							// Login successful. Send the user back the token as a cookie.
-							httpResponse(response, 24, NULL, 0, "text/html; charset=UTF-8", 24);
-							ssSendDataTCP(client->handle, response);
+							response_length = httpResponse(response, 24, NULL, 0, "text/html; charset=UTF-8", 24);
+							ssSendTCP(client->handle, response, response_length);
 
 							#ifdef SOCKET_DEBUG
 							printf("Sent:\n%s\n", response);
@@ -294,8 +294,7 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 							#endif
 
 							// Close the connection.
-							socketclose(client->handle->fd);
-							scRemoveSocket(&s->ss.connectionHandler, client);
+							ssDisconnect(&s->ss, client);
 							return;
 
 						}
@@ -306,8 +305,8 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 
 				// Registration failed.
 				memcpy(response, "Registration failed. This is either a problem with your form or an internal server error.", 89);
-				httpResponse(response, 89, NULL, 0, "text/html; charset=UTF-8", 24);
-				ssSendDataTCP(client->handle, response);
+				response_length = httpResponse(response, 89, NULL, 0, "text/html; charset=UTF-8", 24);
+				ssSendTCP(client->handle, response, response_length);
 
 				#ifdef SOCKET_DEBUG
 				printf("Sent:\n%s\n", response);
@@ -325,8 +324,7 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 				#endif
 
 				// Close the connection.
-				socketclose(client->handle->fd);
-				scRemoveSocket(&s->ss.connectionHandler, client);
+				ssDisconnect(&s->ss, client);
 				return;
 
 			// POST request received from Futurism.
@@ -343,8 +341,8 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 
 					// Token from POST request sent and authenticated.
 					// Package and send response.
-					httpResponse(response, response_length, NULL, 0, "application/json", 16);
-					ssSendDataTCP(client->handle, response);
+					response_length = httpResponse(response, response_length, NULL, 0, "application/json", 16);
+					ssSendTCP(client->handle, response, response_length);
 
 					#ifdef SOCKET_DEBUG
 					printf("Sent:\n%s\n", response);
@@ -362,8 +360,7 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 					#endif
 
 					// Close the connection.
-					socketclose(client->handle->fd);
-					scRemoveSocket(&s->ss.connectionHandler, client);
+					ssDisconnect(&s->ss, client);
 					return;
 
 				}
@@ -390,12 +387,11 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 	#endif
 
 	// Close the connection.
-	socketclose(client->handle->fd);
-	scRemoveSocket(&s->ss.connectionHandler, client);
+	ssDisconnect(&s->ss, client);
 	return;
 
 }
 
 void serverDelete(server *const __RESTRICT__ s){
-	ssShutdownTCP(&s->ss.connectionHandler);
+	ssDelete(&s->ss);
 }

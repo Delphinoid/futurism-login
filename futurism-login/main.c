@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include "memory/memoryManager.h"
 #include "server/server.h"
+#include "shared/flags.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -15,6 +16,9 @@ void cleanup(){
 
 int main(int argc, char **argv){
 
+	char buffer[SOCKET_MAX_BUFFER_SIZE];
+	int buffer_size;
+
 	atexit(cleanup);
 	srand(time(NULL));
 
@@ -24,22 +28,72 @@ int main(int argc, char **argv){
 	}
 
 	// Main loop.
-	while(1){
+	for(;;){
 
 		socketDetails *i;
 		size_t j;
 
-		// Check state changes.
-		ssHandleConnectionsTCP(&s.ss.connectionHandler, 0x00);
-
-		// Handle incoming requests.
-		i = s.ss.connectionHandler.details;
-		j = s.ss.connectionHandler.nfds;
+		// Handle TCP connections.
+		i = s.ss.detailsLast;
+		// Poll TCP connections.
+		if((j = ssPollTCP(&s.ss)) < 0){
+			// Fatal error.
+			break;
+		}
+		// Check if a new client connected.
+		if(s.ss.detailsLast != i){
+			#ifdef SOCKET_DEBUG
+			// Incoming request.
+			// Socket has connected.
+			char ip[46];
+			inet_ntop(
+				i->address.ss_family,
+				(i->address.ss_family == AF_INET ?
+				(void *)(&((struct sockaddr_in *)&i->address)->sin_addr) :
+				(void *)(&((struct sockaddr_in6 *)&i->address)->sin6_addr)),
+				ip, sizeof(ip)
+			);
+			printf("Opening TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&i->address)->sin_port, (unsigned long)i->id);
+			#endif
+		}
+		// Receive data from clients.
+		i = s.ss.details+1;
 		while(j > 0){
 			if(sdValid(i)){
 
-				if(flagsAreSet(i->flags, SOCKET_DETAILS_DISCONNECTED | SOCKET_DETAILS_TIMED_OUT | SOCKET_DETAILS_ERROR)){
+				if(flagsAreSet(i->handle->revents, POLLIN)){
 
+					// Receives up to MAX_BUFFER_SIZE bytes of data from a client socket and stores it in buffer.
+					buffer_size = recv(i->handle->fd, buffer, SOCKET_MAX_BUFFER_SIZE, 0);
+
+					if(buffer_size == -1){
+						// Error encountered, disconnect problematic socket.
+						#ifdef SOCKET_DEBUG
+						ssReportError("recv()", ssError);
+						#endif
+						ssDisconnect(&s.ss, i);
+					}else if(buffer_size == 0){
+						#ifdef SOCKET_DEBUG
+						// Socket has disconnected.
+						char ip[46];
+						inet_ntop(
+							i->address.ss_family,
+							(i->address.ss_family == AF_INET ?
+							(void *)(&((struct sockaddr_in *)&i->address)->sin_addr) :
+							(void *)(&((struct sockaddr_in6 *)&i->address)->sin6_addr)),
+							ip, sizeof(ip)
+						);
+						printf("Closing TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&i->address)->sin_port, (unsigned long)i->id);
+						ssDisconnect(&s.ss, i);
+						#endif
+					}else{
+						// Handle request and reset state flags.
+						serverHandleRequest(&s, i, buffer, buffer_size);
+					}
+
+					--j;
+
+				}else if(flagsAreSet(i->handle->revents, POLLHUP)){
 					#ifdef SOCKET_DEBUG
 					// Socket has disconnected.
 					char ip[46];
@@ -51,37 +105,10 @@ int main(int argc, char **argv){
 						ip, sizeof(ip)
 					);
 					printf("Closing TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&i->address)->sin_port, (unsigned long)i->id);
-					scRemoveSocket(&s.ss.connectionHandler, i);
+					ssDisconnect(&s.ss, i);
 					#endif
-
-				}else{
-
-					#ifdef SOCKET_DEBUG
-					// Incoming request.
-					if(flagsAreSet(i->flags, SOCKET_DETAILS_CONNECTED)){
-						// Socket has connected.
-						char ip[46];
-						inet_ntop(
-							i->address.ss_family,
-							(i->address.ss_family == AF_INET ?
-							(void *)(&((struct sockaddr_in *)&i->address)->sin_addr) :
-							(void *)(&((struct sockaddr_in6 *)&i->address)->sin6_addr)),
-							ip, sizeof(ip)
-						);
-						printf("Opening TCP connection with %s:%u (socket #%lu).\n", ip, ((struct sockaddr_in *)&i->address)->sin_port, (unsigned long)i->id);
-					}
-					#endif
-
-					if(flagsAreSet(i->flags, SOCKET_DETAILS_NEW_DATA)){
-						// Handle request and reset state flags.
-						serverHandleRequest(&s, i);
-					}
-
-					i->flags = 0x00;
-
+					--j;
 				}
-
-				--j;
 
 			}
 			++i;

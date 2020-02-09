@@ -3,12 +3,11 @@
 
 #include "socketServer.h"
 
-return_t ssSendDataUDP(const socketConnectionHandler *const __RESTRICT__ connectionHandler, const socketDetails *const __RESTRICT__ details, const char *const __RESTRICT__ msg);
-#ifdef SOCKET_MANAGE_TIMEOUTS
-return_t ssHandleConnectionsUDP(socketConnectionHandler *const __RESTRICT__ connectionHandler, const flags_t flags, const uint32_t currentTick);
+#ifdef _WIN32
+int ssSendUDP(const socketServer *const __RESTRICT__ server, const socketDetails *const __RESTRICT__ details, const char *const __RESTRICT__ buffer, const int length);
 #else
-return_t ssHandleConnectionsUDP(socketConnectionHandler *const __RESTRICT__ connectionHandler, const flags_t flags);
+int ssSendUDP(const socketServer *const __RESTRICT__ server, const socketDetails *const __RESTRICT__ details, const char *const __RESTRICT__ buffer, const size_t length);
 #endif
-void ssShutdownUDP(socketConnectionHandler *const __RESTRICT__ connectionHandler);
+int ssReceiveUDP(socketServer *const __RESTRICT__ server, socketDetails **details, char *const __RESTRICT__ buffer);
 
 #endif

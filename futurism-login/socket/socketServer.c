@@ -5,15 +5,18 @@
 #include <fcntl.h>
 #endif
 
+#ifndef SOCKET_USE_MALLOC
+#include "../memory/memoryManager.h"
+#endif
+
 #ifdef SOCKET_DEBUG
 #include <stdio.h>
 void ssReportError(const char *const __RESTRICT__ failedFunction, const int errorCode){
-	printf("\nSocket function %s has failed: %i\nSee here for more information:\nhttps://msdn.microsoft.com/en-us/library/windows/desktop/ms740668%%28v=vs.85%%29.aspx\n\n",
-	       failedFunction, errorCode);
+	printf("\nSocket function %s has failed: %i\nFor troubleshooting, please refer to the manual for your platform.\n\n", failedFunction, errorCode);
 }
 #endif
 
-static __FORCE_INLINE__ return_t ssSetNonBlockMode(const int fd, unsigned long mode){
+static __FORCE_INLINE__ int ssSetNonBlockMode(const int fd, unsigned long mode){
 	#ifdef _WIN32
 		return !ioctlsocket(fd, FIONBIO, &mode);
 	#else
@@ -36,7 +39,7 @@ static __FORCE_INLINE__ int ssGetAddressFamily(const char *const __RESTRICT__ ip
 	return -1;
 }
 
-return_t ssInit(socketServer *const __RESTRICT__ server, ssConfig config){
+int ssInit(void *const __RESTRICT__ server, ssConfig config){
 
 	// Initialize server IP, port, type and protocol, then load the server config.
 	struct pollfd masterHandle;
@@ -46,10 +49,6 @@ return_t ssInit(socketServer *const __RESTRICT__ server, ssConfig config){
 	#ifdef SOCKET_DEBUG
 	puts("Initializing server...");
 	#endif
-
-	server->type = config.type;
-	server->protocol = config.protocol;
-	server->connectionHandler.details = NULL;
 
 	// Create a socket prototype for the master socket.
 	//
@@ -65,7 +64,7 @@ return_t ssInit(socketServer *const __RESTRICT__ server, ssConfig config){
 	if(masterHandle.fd == INVALID_SOCKET){
 		// If socket() failed, abort.
 		#ifdef SOCKET_DEBUG
-		ssReportError("socket()", lastErrorID);
+		ssReportError("socket()", ssError);
 		#endif
 		return 0;
 	}
@@ -78,7 +77,7 @@ return_t ssInit(socketServer *const __RESTRICT__ server, ssConfig config){
 		const unsigned long timeout = SOCKET_POLL_TIMEOUT;
 		if(setsockopt(masterHandle.fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(unsigned long)) == SOCKET_ERROR){
 			#ifdef SOCKET_DEBUG
-			ssReportError("setsockopt()", lastErrorID);
+			ssReportError("setsockopt()", ssError);
 			#endif
 			return 0;
 		}
@@ -122,7 +121,7 @@ return_t ssInit(socketServer *const __RESTRICT__ server, ssConfig config){
 	// Check result of bind()
 	if(bind(masterHandle.fd, (struct sockaddr *)&masterDetails.address, sizeof(struct sockaddr_storage)) == SOCKET_ERROR){  // If bind() failed, abort.
 		#ifdef SOCKET_DEBUG
-		ssReportError("bind()", lastErrorID);
+		ssReportError("bind()", ssError);
 		#endif
 		return 0;
 	}
@@ -132,19 +131,36 @@ return_t ssInit(socketServer *const __RESTRICT__ server, ssConfig config){
 		// SOMAXCONN = automatically choose maximum number of pending connections, different across systems.
 		if(listen(masterHandle.fd, config.backlog) == SOCKET_ERROR){
 			#ifdef SOCKET_DEBUG
-			ssReportError("listen()", lastErrorID);
+			ssReportError("listen()", ssError);
 			#endif
 			return 0;
 		}
 	}
 
-	// Initialize the connection handler.
-	masterDetails.flags = 0x00;
-	if(!scInit(&server->connectionHandler, config.connections, &masterHandle, &masterDetails)){
-		#ifdef SOCKET_DEBUG
-		puts("Error: the socket connection handler could not be initialized.\n");
-		#endif
-		return 0;
+	masterDetails.id = 0;
+	if(config.allocate == SOCKET_SERVER_ALLOCATE_EVERYTHING){
+
+		// Initialize the connection handler.
+		((socketServer *const)server)->details = NULL;
+		if(!scInit(server, config.connections, &masterHandle, &masterDetails)){
+			#ifdef SOCKET_DEBUG
+			puts("Error: the socket connection handler could not be initialized.\n");
+			#endif
+			return 0;
+		}
+
+	}else if(config.allocate == SOCKET_SERVER_ALLOCATE_LIGHTWEIGHT){
+
+		// This should use a free-list or something.
+
+	}else{
+
+		// Don't allocate a connection handler. Just return the master socket.
+		// The programmer can keep track of connections themselves if they wish.
+		((socketMaster *const)server)->handle = masterHandle;
+		((socketMaster *const)server)->address = masterDetails.address;
+		((socketMaster *const)server)->addressSize = masterDetails.addressSize;
+
 	}
 
 	#ifdef SOCKET_DEBUG
@@ -154,30 +170,13 @@ return_t ssInit(socketServer *const __RESTRICT__ server, ssConfig config){
 
 }
 
-#ifdef SOCKET_MANAGE_TIMEOUTS
-void ssCheckTimeouts(socketConnectionHandler *const __RESTRICT__ sc, const uint32_t currentTick){
-	// This function is slow and mostly unnecessary, so it should be avoided if at all possible!
-	socketDetails *i = sc->details+1;
-	size_t j = sc->nfds-1;
-	while(j > 0){
-		if(sdValid(i)){
-			// Disconnect the socket at index i if it has timed out.
-			if(sdTimedOut(i, currentTick)){
-				// UDP sockets use the same handle as the master socket, so they won't be closed.
-				if(i != scMasterDetails(sc)){
-					socketclose(i->handle->fd);
-				}
-				scRemoveSocket(sc, i);
-			}
-			--j;
-		}
-		++i;
-	}
+int ssDisconnect(socketServer *const __RESTRICT__ server, socketDetails *const clientDetails){
+	socketclose(clientDetails->handle->fd);
+	return scRemoveSocket(server, clientDetails);
 }
-#endif
 
 #ifdef _WIN32
-return_t ssStartup(){
+int ssStartup(){
 	// Initialize Winsock.
 	WSADATA wsaData;
 	int initError = WSAStartup(WINSOCK_VERSION, &wsaData);
@@ -194,3 +193,201 @@ void ssCleanup(){
 	WSACleanup();
 }
 #endif
+
+static __FORCE_INLINE__ uintptr_t scSocketID(const socketServer *const __RESTRICT__ sc, const socketDetails *const details){
+	return (((uintptr_t)details) - ((uintptr_t)sc->details)) / sizeof(socketDetails);
+}
+
+socketDetails *scSocket(socketServer *const __RESTRICT__ sc, const uintptr_t id){
+	return &sc->details[id];
+}
+
+int scInit(socketServer *const __RESTRICT__ sc, const size_t capacity, const socketHandle *const __RESTRICT__ masterHandle, const socketDetails *const __RESTRICT__ masterDetails){
+
+	socketDetails *details;
+	socketHandle *handle;
+	const socketDetails *detailsLast;
+
+	// Initialize socketDetails.
+	details =
+	#ifdef SOCKET_USE_MALLOC
+		malloc(capacity * (sizeof(socketDetails) + sizeof(socketHandle)));
+	#else
+		memAllocate(capacity * (sizeof(socketDetails) + sizeof(socketHandle)));
+	#endif
+	if(details == NULL){
+		// Memory allocation failure.
+		return -1;
+	}
+	sc->details = details;
+	sc->detailsLast = details-1;
+
+	// Initialize socketHandles.
+	handle = (socketHandle *)&details[capacity];
+	sc->handles = handle;
+	sc->handleLast = handle-1;
+
+	// Initialize the fd array.
+	detailsLast = (socketDetails *)handle;
+	while(details < detailsLast){
+		*((socketDetails **)handle) = details;
+		details->handle = NULL;
+		details->id = scSocketID(sc, details);
+		++handle; ++details;
+	}
+
+	sc->capacity = capacity;
+	sc->nfds = 0;
+
+	// Add the master socket.
+	return scAddSocket(sc, masterHandle, masterDetails);
+
+}
+
+static __FORCE_INLINE__ int scResize(socketServer *const __RESTRICT__ sc){
+
+	uintptr_t offset;
+	socketDetails *details;
+	socketHandle *handle;
+	socketHandle *handleOld;
+	const socketDetails *detailsLast;
+
+	size_t detailsLeft = sc->nfds;
+	size_t handlesLeft = detailsLeft;
+
+	// Resize the buffer.
+	const size_t capacity = sc->capacity << 1;
+	void *const buffer =
+	#ifdef SOCKET_USE_MALLOC
+		realloc(sc->details, capacity * (sizeof(socketDetails) + sizeof(socketHandle)));
+	#else
+		memReallocate(sc->details, capacity * (sizeof(socketDetails) + sizeof(socketHandle)));
+	#endif
+	if(buffer == NULL){
+		// Memory allocation failure.
+		return -1;
+	}
+	details = buffer;
+	handle = (socketHandle *)&details[capacity];
+	handleOld = (socketHandle *)&details[sc->capacity];
+	sc->capacity = capacity;
+
+	// Get the offset to add to each details' handle pointer.
+	// This should also work if the allocated space is before
+	// the old space in memory.
+	offset = ((uintptr_t)handle) - ((uintptr_t)sc->handles);
+
+	// Shift member pointers.
+	sc->details = details;
+	sc->detailsLast = (socketDetails *)(((uintptr_t)sc->detailsLast) + ((uintptr_t)details) - ((uintptr_t)sc->details));
+	sc->handles = handle;
+	sc->handleLast = (socketHandle *)(((uintptr_t)sc->handleLast) + offset);
+
+	// Fix element pointers.
+	detailsLast = (socketDetails *)handle;
+	while(details < detailsLast){
+		if(handlesLeft > 0){
+			*handle = *handleOld;
+			++handleOld;
+			--handlesLeft;
+		}else{
+			*((socketDetails **)handle) = details;
+		}
+		if(detailsLeft > 0){
+			if(details->handle != NULL){
+				details->handle = (socketHandle *)(((uintptr_t)details->handle) + offset);
+				--detailsLeft;
+			}
+		}else{
+			details->handle = NULL;
+			details->id = scSocketID(sc, details);
+		}
+		++details; ++handle;
+	}
+
+	return 1;
+
+}
+
+int scAddSocket(socketServer *const __RESTRICT__ sc, const socketHandle *const __RESTRICT__ handle, const socketDetails *const __RESTRICT__ details){
+
+	if(sc->nfds >= sc->capacity){
+		#ifdef SOCKET_REALLOCATE
+			if(scResize(sc) < 0){
+				// Memory allocation failure.
+				return -1;
+			}
+		#else
+			return 0;
+		#endif
+	}
+
+	{
+
+		// The file descriptor stores a pointer
+		// to its corresponding details buffer.
+		socketHandle *const newHandle = ++sc->handleLast;
+		socketDetails *const newDetails = *((socketDetails **)newHandle);
+
+		*newHandle = *handle;
+		newDetails->handle = newHandle;
+		newDetails->addressSize = details->addressSize;
+		newDetails->address = details->address;
+		#ifdef SOCKET_MANAGE_TIMEOUTS
+		newDetails->lastTick = details->lastTick;
+		#endif
+
+		sc->detailsLast = newDetails;
+		++sc->nfds;
+
+	}
+
+	return 1;
+
+}
+
+int scRemoveSocket(socketServer *const __RESTRICT__ sc, socketDetails *const details){
+
+	// Don't touch the master socket.
+	if(details == scMasterDetails(sc)){
+		return 0;
+	}
+
+	// Move the last handle to fill in the gap.
+	*details->handle = *sc->handleLast;
+	// Make the now-empty last handle point to
+	// its new (empty) corresponding details.
+	*((socketDetails **)sc->handleLast) = details;
+	sc->detailsLast->handle = details->handle;
+	// Shift the last handle back.
+	--sc->handleLast;
+
+	// These details are no longer in use.
+	details->handle = NULL;
+
+	--sc->nfds;
+	return 1;
+
+}
+
+void scDelete(socketServer *sc){
+
+	if(sc->details != NULL){
+
+		socketHandle *handle = sc->handles;
+		const socketHandle *const handleLast = &handle[sc->nfds];
+
+		while(handle < handleLast){
+			socketclose(handle->fd);
+			++handle;
+		}
+
+		#ifdef SOCKET_USE_MALLOC
+		free(sc->details);
+		#else
+		memFree(sc->details);
+		#endif
+
+	}
+
+}

@@ -47,7 +47,7 @@
 #ifdef _WIN32
 	#include <winsock2.h>
 	#include <ws2tcpip.h>
-	#define lastErrorID WSAGetLastError()
+	#define ssError WSAGetLastError()
 	#define WINSOCK_VERSION MAKEWORD(2, 2)
 	#define EWOULDBLOCK WSAEWOULDBLOCK
 	#define ECONNRESET WSAECONNRESET
@@ -71,7 +71,7 @@
 	#include <netdb.h>
 	#include <unistd.h>
 	#include <errno.h>
-	#define lastErrorID errno
+	#define ssError errno
 	#define INVALID_SOCKET -1
 	#define SOCKET_ERROR -1
 	#define socketclose(x) close(x)
