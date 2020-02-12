@@ -12,7 +12,7 @@ return_t dbRegister(database *const __RESTRICT__ db, const char *const __RESTRIC
 	char hash[USER_PASSWORD_BYTES];
 
 	// Length of the path to the user directory.
-	const size_t user_name_length = strlen(username);
+	const size_t user_name_length = strnlen(username, USER_NAME_BYTES);
 	const size_t user_directory_length = db->path_length + 7 + (user_name_length << 1);
 
 	// Allocate one big string that holds each required path.
@@ -91,7 +91,7 @@ return_t dbLogin(database *const __RESTRICT__ db, const char *const __RESTRICT__
 	session s;
 
 	// Length of the path to the user directory.
-	const size_t user_name_length = strlen(username);
+	const size_t user_name_length = strnlen(username, USER_NAME_BYTES);
 	const size_t user_directory_length = db->path_length + 7 + (user_name_length << 1);
 	const size_t password_path_length = user_directory_length + 10;
 
@@ -103,12 +103,14 @@ return_t dbLogin(database *const __RESTRICT__ db, const char *const __RESTRICT__
 		(password_path_length > session_path_length ? password_path_length : session_path_length) * sizeof(char)
 	);
 
+	s.id_length = user_name_length << 1;
+
 	// Build password path.
 	memcpy(path, &db->path, db->path_length);
 	memcpy(&path[db->path_length], FILE_PATH_DELIMITER_STRING"users"FILE_PATH_DELIMITER_STRING, 7);
 	// Store the encoded username for later on.
 	userEncodeName(username, &username[user_name_length], s.id);
-	memcpy(&path[db->path_length+7], s.id, user_name_length << 1);
+	memcpy(&path[db->path_length+7], s.id, s.id_length);
 	memcpy(&path[user_directory_length], FILE_PATH_DELIMITER_STRING"password\0", 10);
 
 	// Check if the user exists. If we couldn't open the
@@ -138,7 +140,7 @@ return_t dbLogin(database *const __RESTRICT__ db, const char *const __RESTRICT__
 			// Build session path.
 			memcpy(path, &db->path, db->path_length);
 			// Generate a new session.
-			seshGenerate(&s, s.id, path, session_path_length);
+			seshGenerate(&s, s.id, s.id_length, path, session_path_length);
 			// Copy over the new token.
 			memcpy(token, &path[session_path_length-SESSION_TOKEN_BYTES], SESSION_TOKEN_BYTES);
 
@@ -191,7 +193,7 @@ return_t dbAuthenticate(database *const __RESTRICT__ db, const char *const __RES
 		// If it is, update it to reflect the current time.
 		s.last_active = t;
 		fseek(f, 0, SEEK_SET);
-		fwrite(&s, 1, sizeof(session), f);
+		fwrite(&s, 1, sizeof(session)-(USER_NAME_BYTES<<1)+s.id_length, f);
 		fclose(f);
 
 		// Return the valid session.
@@ -204,14 +206,13 @@ return_t dbAuthenticate(database *const __RESTRICT__ db, const char *const __RES
 	return 0;
 
 }
-#include <errno.h>
-return_t dbUserData(database *const __RESTRICT__ db, const char *const __RESTRICT__ id, char *const __RESTRICT__ data, size_t *const __RESTRICT__ data_length){
+
+return_t dbUserData(database *const __RESTRICT__ db, const char *const __RESTRICT__ id, const size_t id_length, char *const __RESTRICT__ data, size_t *const __RESTRICT__ data_length){
 
 	FILE *f;
 
 	// Length of the path to the user directory.
-	const size_t user_id_length = strnlen(id, USER_NAME_BYTES<<1);
-	const size_t user_directory_length = db->path_length + 7 + user_id_length;
+	const size_t user_directory_length = db->path_length + 7 + id_length;
 	const size_t user_data_path_length = user_directory_length + 6;
 
 	// Allocate a buffer for the password and session paths.
@@ -220,7 +221,7 @@ return_t dbUserData(database *const __RESTRICT__ db, const char *const __RESTRIC
 	// Build data path.
 	memcpy(path, &db->path, db->path_length);
 	memcpy(&path[db->path_length], FILE_PATH_DELIMITER_STRING"users"FILE_PATH_DELIMITER_STRING, 7);
-	memcpy(&path[db->path_length+7], id, user_id_length);
+	memcpy(&path[db->path_length+7], id, id_length);
 	memcpy(&path[user_directory_length], FILE_PATH_DELIMITER_STRING"data\0", 6);
 
 	f = fopen(path, "r");

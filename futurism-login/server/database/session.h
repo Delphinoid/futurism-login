@@ -19,11 +19,12 @@ typedef struct {
 	time_t last_active;
 
 	// Encoded username.
+	size_t id_length;
 	char id[USER_NAME_BYTES<<1];
 
 } session;
 
-void seshGenerate(session *const __RESTRICT__ sesh, const char *const id, char *const __RESTRICT__ path, const size_t path_length);
+void seshGenerate(session *const __RESTRICT__ sesh, const char *const id, const size_t id_length, char *const __RESTRICT__ path, const size_t path_length);
 return_t seshInvalid(const session *const __RESTRICT__ sesh, const time_t t);
 
 #endif

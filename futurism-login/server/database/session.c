@@ -34,7 +34,7 @@ static __FORCE_INLINE__ void seshGenerateToken(char *token){
 	}
 }
 
-void seshGenerate(session *const __RESTRICT__ sesh, const char *const id, char *const __RESTRICT__ path, const size_t path_length){
+void seshGenerate(session *const __RESTRICT__ sesh, const char *const id, const size_t id_length, char *const __RESTRICT__ path, const size_t path_length){
 
 	FILE *f;
 	char token[SESSION_TOKEN_BYTES];
@@ -43,7 +43,8 @@ void seshGenerate(session *const __RESTRICT__ sesh, const char *const id, char *
 	if(id != sesh->id){
 		// The id should already be set, so this
 		// will really never be invoked.
-		strncpy(sesh->id, id, USER_NAME_BYTES<<1);
+		sesh->id_length = strnlen(sesh->id, USER_NAME_BYTES<<1);
+		memcpy(sesh->id, id, sesh->id_length);
 	}
 
 	// Generate a token.
@@ -61,7 +62,7 @@ void seshGenerate(session *const __RESTRICT__ sesh, const char *const id, char *
 		memcpy(&path[path_length-SESSION_TOKEN_BYTES], token, SESSION_TOKEN_BYTES);
 	}
 	f = fopen(path, "w");
-	fwrite(sesh, 1, sizeof(session), f);
+	fwrite(sesh, 1, sizeof(session)-(USER_NAME_BYTES<<1)+sesh->id_length, f);
 	fclose(f);
 	// This file is not particularly sensitive.
 	chmod(path, 0744);

@@ -336,7 +336,7 @@ void serverHandleRequest(server *const __RESTRICT__ s, socketDetails *const __RE
 
 				if(
 					dbAuthenticate(&s->db, request.contentStart+6, &sesh) == 0 &&
-					dbUserData(&s->db, sesh.id, response, &response_length) == 0
+					dbUserData(&s->db, sesh.id, sesh.id_length, response, &response_length) == 0
 				){
 
 					// Token from POST request sent and authenticated.
